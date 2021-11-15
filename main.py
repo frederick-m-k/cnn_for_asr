@@ -200,12 +200,16 @@ def norm_frames(one_phoneme, shortest_phoneme):
         this method calls a recursive one
     '''
     normed_phoneme = []
+    if len(one_phoneme) == 12:
+        t = 0
     if len(one_phoneme) == shortest_phoneme:
         return [one_phoneme]
     elif len(one_phoneme) > shortest_phoneme:
         normed_phoneme = _norm_frames(
             0, len(one_phoneme), shortest_phoneme, one_phoneme, normed_phoneme)
-
+    for normed in normed_phoneme:
+        if len(normed) != shortest_phoneme:
+            print("found you", len(one_phoneme))
     return normed_phoneme
 
 
@@ -221,8 +225,8 @@ def _norm_frames(missing_start, missing_end, shortest_phoneme, phoneme, normed_p
             (missing_end - missing_start)
         start_point = missing_start - int(further_miss_distance / 2)
         end_point = missing_end + int(further_miss_distance / 2)
-        if further_miss_distance == 1:
-            start_point -= 1
+        if further_miss_distance % 2 != 0:
+            end_point += 1
 
         normed_phoneme.append(phoneme[start_point:end_point])
         return normed_phoneme
@@ -269,7 +273,11 @@ def shape_mfccs_for_training(all_mfccs):
                 X.append(normed_phoneme)
                 y.append(label_list.index(label))
 
-    X = np.array(X)
+    for big_el in X:
+        if big_el.shape != (13, 5):
+            print("error")
+
+    X = np.array(X, dtype=object)
     X = X.reshape(X.shape[0], X.shape[1], X.shape[2], 1)
     y = to_categorical(y, num_classes=len(all_mfccs.keys()))
     return X, y
