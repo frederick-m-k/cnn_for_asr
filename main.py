@@ -194,6 +194,54 @@ def load_mfccs():
     return phoneme2mfccs
 
 
+def norm_frames(one_phoneme, shortest_phoneme):
+    '''
+        split a phoneme of length x to smaller parts, each of length shortest_phoneme
+        this method calls a recursive one
+    '''
+    normed_phoneme = []
+    if len(one_phoneme) == shortest_phoneme:
+        return [one_phoneme]
+    elif len(one_phoneme) > shortest_phoneme:
+        normed_phoneme = _norm_frames(
+            0, len(one_phoneme), shortest_phoneme, one_phoneme, normed_phoneme)
+
+    return normed_phoneme
+
+
+def _norm_frames(missing_start, missing_end, shortest_phoneme, phoneme, normed_phoneme):
+    '''
+        recursive method
+    '''
+    if missing_start >= missing_end:  # nothing more to add
+        return normed_phoneme
+
+    elif missing_end - missing_start <= shortest_phoneme:  # one missing element is also present here
+        further_miss_distance = shortest_phoneme - \
+            (missing_end - missing_start)
+        start_point = missing_start - int(further_miss_distance / 2)
+        end_point = missing_end + int(further_miss_distance / 2)
+        if further_miss_distance == 1:
+            start_point -= 1
+
+        normed_phoneme.append(phoneme[start_point:end_point])
+        return normed_phoneme
+
+    else:  # now we know, that there are at least two more parts of the phoneme missing
+        first_end = missing_start + shortest_phoneme
+        last_start = missing_end - shortest_phoneme
+
+        first_part_of_phoneme = phoneme[missing_start:first_end]
+        normed_phoneme.append(first_part_of_phoneme)
+
+        normed_phoneme = _norm_frames(first_end, last_start,
+                                      shortest_phoneme, phoneme, normed_phoneme)  # TODO check last_last
+
+        last_part_of_phoneme = phoneme[last_start:missing_end]
+        normed_phoneme.append(last_part_of_phoneme)
+        return normed_phoneme
+
+
 def shape_mfccs_for_training(all_mfccs):
     '''
         input:
@@ -208,11 +256,18 @@ def shape_mfccs_for_training(all_mfccs):
 
     label_list = list(all_mfccs.keys())
 
+    shortest_phoneme = sys.maxsize
     for label, phonemes in all_mfccs.items():
         for frames in phonemes:
-            frames = np.array(frames).reshape(13, len(frames))
-            X.append(frames)
-            y.append(label_list.index(label))
+            shortest_phoneme = min(len(frames), shortest_phoneme)
+
+    for label, phonemes in all_mfccs.items():
+        for one_phoneme in phonemes:
+            normed_phonemes = norm_frames(one_phoneme, shortest_phoneme)
+            for normed_phoneme in normed_phonemes:
+                normed_phoneme = np.array(normed_phoneme).T
+                X.append(normed_phoneme)
+                y.append(label_list.index(label))
 
     X = np.array(X)
     X = X.reshape(X.shape[0], X.shape[1], X.shape[2], 1)
