@@ -2,7 +2,6 @@
 # imports
 import os
 import sys
-from keras.layers.core.dropout import Dropout
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,9 +9,12 @@ import librosa
 import json
 import numpy as np
 
+import keras
 from keras.models import Sequential
-from keras.layers import Conv2D, Dense, Flatten, MaxPool2D
+from keras.layers import Conv2D, Dense, Flatten, MaxPool2D, Dropout
 from tensorflow.keras.utils import to_categorical
+
+from sklearn.utils.class_weight import compute_class_weight
 
 ###### global variables
 corpus_path = "resources/phattsessionz/"
@@ -200,16 +202,13 @@ def norm_frames(one_phoneme, shortest_phoneme):
         this method calls a recursive one
     '''
     normed_phoneme = []
-    if len(one_phoneme) == 12:
-        t = 0
+    if len(one_phoneme) < shortest_phoneme:
+        return []
     if len(one_phoneme) == shortest_phoneme:
         return [one_phoneme]
     elif len(one_phoneme) > shortest_phoneme:
         normed_phoneme = _norm_frames(
             0, len(one_phoneme), shortest_phoneme, one_phoneme, normed_phoneme)
-    for normed in normed_phoneme:
-        if len(normed) != shortest_phoneme:
-            print("found you", len(one_phoneme))
     return normed_phoneme
 
 
@@ -239,7 +238,7 @@ def _norm_frames(missing_start, missing_end, shortest_phoneme, phoneme, normed_p
         normed_phoneme.append(first_part_of_phoneme)
 
         normed_phoneme = _norm_frames(first_end, last_start,
-                                      shortest_phoneme, phoneme, normed_phoneme)  # TODO check last_last
+                                      shortest_phoneme, phoneme, normed_phoneme)
 
         last_part_of_phoneme = phoneme[last_start:missing_end]
         normed_phoneme.append(last_part_of_phoneme)
@@ -265,6 +264,7 @@ def shape_mfccs_for_training(all_mfccs):
         for frames in phonemes:
             shortest_phoneme = min(len(frames), shortest_phoneme)
 
+    shortest_phoneme = 15
     for label, phonemes in all_mfccs.items():
         for one_phoneme in phonemes:
             normed_phonemes = norm_frames(one_phoneme, shortest_phoneme)
@@ -273,37 +273,38 @@ def shape_mfccs_for_training(all_mfccs):
                 X.append(normed_phoneme)
                 y.append(label_list.index(label))
 
-    for big_el in X:
-        if big_el.shape != (13, 5):
-            print("error")
-
-    X = np.array(X, dtype=object)
+    X = np.array(X)
     X = X.reshape(X.shape[0], X.shape[1], X.shape[2], 1)
     y = to_categorical(y, num_classes=len(all_mfccs.keys()))
     return X, y
 
 
-def get_conv_model(input_shape):
+def get_conv_model(input_shape, output_classes):
+    '''
+        define a convolutional keras model
+        compile and return it
+    '''
     model = Sequential()
     model.add(Conv2D(16, (3, 3), activation="relu", strides=(1, 1),
-                     padding="same", input_shape=input_shape))
-    model.add(Conv2D(32, (3, 3), activation="relu", strides=(1, 1),
+                     padding="same", input_shape=input_shape))  # padding="same",
+    model.add(Conv2D(32, (3, 3), activation="relu", strides=(1, 1),  # ))
                      padding="same"))
-    model.add(Conv2D(64, (3, 3), activation="relu", strides=(1, 1),
+    model.add(Conv2D(64, (3, 3), activation="relu", strides=(1, 1),  # ))
                      padding="same"))
-    model.add(Conv2D(128, (3, 3), activation="relu", strides=(1, 1),
+    model.add(Conv2D(128, (3, 3), activation="relu", strides=(1, 1),  # ))
                      padding="same"))
-    model.add(MaxPool2D((2, 2)))
-    # model.add(Dropout(0.5))
+    model.add(MaxPool2D((3, 3)))
+    model.add(Dropout(0.4))
     model.add(Flatten())
     # Dense layers are the fully-connected layers
-    model.add(Dense(128, activation="relu"))
+    # model.add(Dense(128, activation="relu"))
+    # model.add(Dropout(0.25))
     model.add(Dense(64, activation="relu"))
-    model.add(Dense(10, activation="relu"))
+    model.add(Dense(output_classes, activation="sigmoid"))
 
     model.summary()
 
-    model.compile(loss="categorial_crossentropy",
+    model.compile(loss="categorical_crossentropy",
                   optimizer="adam",
                   metrics=["acc"])
 
@@ -358,14 +359,15 @@ def main(use_saved):
         X, y = shape_mfccs_for_training(pho2mfccs)
         input_shape_net = (X.shape[1], X.shape[2], X.shape[3])
 
-        model = get_conv_model(input_shape_net)
+        model = get_conv_model(input_shape_net, len(pho2mfccs.keys()))
 
-        # TODO: maybe to a class weighting (method can be found in sklearn.utils.class_weigth: compute_class_weigth)
+        # TODO: maybe to a class weighting (method can be found in sklearn.utils.class_weight: compute_class_weight)
         model.fit(X, y, epochs=10, batch_size=32, shuffle=True)
         # to adapt model, both epochs as well as batch_size can be a good starting point
 
-    model.save("models/first.tf", save_format="tf")
+        model.save("models/first.tf", save_format="tf")
 
 
 if __name__ == "__main__":
     main(True)
+    model = keras.models.load_model("models/first.tf", compile=True)
