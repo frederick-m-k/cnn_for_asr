@@ -8,6 +8,7 @@ import numpy as np
 import librosa
 import json
 import numpy as np
+import random
 
 import keras
 from keras.models import Sequential
@@ -311,6 +312,33 @@ def get_conv_model(input_shape, output_classes):
     return model
 
 
+def seperate_train_test(all_X, all_y, n=100):
+    '''
+        seperate the whole data into training and test data
+        sampling n times from the data will create the test set
+        return everything as (train_X, train_y), (test_X, test_y)
+    '''
+    #all_indices = random.sample(range(len(all_X)), n)
+    test_X, test_y = [], []
+    for _ in range(n):
+        index = random.sample(range(len(all_X)), 1)[0]
+        all_X, element_X = pop_from_npArray(all_X, index)
+        all_y, element_y = pop_from_npArray(all_y, index)
+        test_X.append(element_X)
+        test_y.append(element_y)
+    return (all_X, all_y), (test_X, test_y)
+
+
+def pop_from_npArray(np_array, index):
+    '''
+        list.pop(index) equivalent for numpy-arrays
+    '''
+    first = np_array[0:index]
+    last = np_array[index+1:len(np_array)]
+    element = np_array[index]
+    return np.concatenate((first, last)), element
+
+
 # plotting
 def plot_bar_chart():
     data = []
@@ -346,6 +374,15 @@ def plot_meanFrameAmount_per_phoneme(pho2mfccs):
     plt.show()
 
 
+def plot_loss_acc(loss, acc):
+    # plt.figure()
+    # fig, ax = plt.subplots()
+    plt.plot(loss)
+    plt.show()
+    plt.plot(acc)
+    plt.show()
+
+
 def main(use_saved):
     if not use_saved:
         gather_all_mfccs()
@@ -359,15 +396,28 @@ def main(use_saved):
         X, y = shape_mfccs_for_training(pho2mfccs)
         input_shape_net = (X.shape[1], X.shape[2], X.shape[3])
 
+        (train_X, train_y), (test_X, test_y) = seperate_train_test(X, y)
+
         model = get_conv_model(input_shape_net, len(pho2mfccs.keys()))
 
-        # TODO: maybe to a class weighting (method can be found in sklearn.utils.class_weight: compute_class_weight)
-        model.fit(X, y, epochs=10, batch_size=32, shuffle=True)
-        # to adapt model, both epochs as well as batch_size can be a good starting point
+        if os.path.exists("models/first.tf"):
+            model = keras.models.load_model("models/first.tf", compile=True)
+        else:
+            # TODO: maybe to a class weighting (method can be found in sklearn.utils.class_weight: compute_class_weight)
+            model.fit(train_X, train_y, epochs=10, batch_size=32, shuffle=True)
+            # to adapt model, both epochs as well as batch_size can be a good starting point
+            model.save("models/first.tf", save_format="tf")
+            print("Done with training")
 
-        model.save("models/first.tf", save_format="tf")
+        print("----------------------------")
+        print("output classes", len(pho2mfccs.keys()))
+        print("Now starting evaluation")
+        test_X = np.array(test_X)
+        test_y = np.array(test_y)
+        loss, acc = model.evaluate(test_X, test_y)
+        print("loss:", loss)
+        print("acc:", acc)
 
 
 if __name__ == "__main__":
     main(True)
-    model = keras.models.load_model("models/first.tf", compile=True)
